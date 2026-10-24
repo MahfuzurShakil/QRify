@@ -1,4 +1,4 @@
-package com.example.qrify
+package com.shakil.qrify
 
 import io.flutter.embedding.android.FlutterActivity
 
