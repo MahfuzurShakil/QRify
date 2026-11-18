@@ -75,7 +75,7 @@ class _BarcodeGeneratorScreenState extends State<BarcodeGeneratorScreen> {
       description: 'US retail products',
       barcode: Barcode.upcA(),
       hint: '012345678905',
-      color: Color(0xFFB388FF),
+      color: AppColors.lavender,
       icon: Icons.storefront_rounded,
       maxLength: 12,
     ),
@@ -105,20 +105,29 @@ class _BarcodeGeneratorScreenState extends State<BarcodeGeneratorScreen> {
     final data = _inputCtrl.text.trim();
     if (data.isEmpty) return;
 
+    FocusScope.of(context).unfocus();
+
+    // Invalid data হলে barcode বানাবো না — না হলে error image save হয়ে যায়
+    final error = _validationError(data);
+    if (error != null) {
+      setState(() {
+        _isGenerated = false;
+        _barcodeData = '';
+      });
+      showAppToast(context, error, type: ToastType.error);
+      return;
+    }
+
     // PDF417 এ ৫০+ char হলে warning toast দেখাও
     if (_selectedFormat == 'PDF417' && data.length > 50) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            '⚠️ ${data.length} chars — barcode may be hard to scan. Keep under 50 for best results.',
-          ),
-          duration: const Duration(seconds: 4),
-          backgroundColor: AppColors.warning.withOpacity(0.9),
-        ),
+      showAppToast(
+        context,
+        '${data.length} chars — barcode may be hard to scan. Keep under 50 for best results.',
+        type: ToastType.warning,
+        duration: const Duration(seconds: 3),
       );
     }
 
-    FocusScope.of(context).unfocus();
     setState(() {
       _barcodeData = data;
       _isGenerated = true;
@@ -131,16 +140,39 @@ class _BarcodeGeneratorScreenState extends State<BarcodeGeneratorScreen> {
     );
   }
 
+  /// Returns a user-friendly message if [data] is not valid for the selected
+  /// format, otherwise null.
+  String? _validationError(String data) {
+    try {
+      _currentFormat.barcode.verify(data);
+      return null;
+    } on BarcodeException catch (e) {
+      return 'Invalid data for ${_currentFormat.label}: ${e.message}';
+    } catch (_) {
+      return 'Invalid data for ${_currentFormat.label}';
+    }
+  }
+
+  bool get _canExport =>
+      _isGenerated &&
+      _barcodeData.isNotEmpty &&
+      _validationError(_barcodeData) == null;
+
   Future<void> _save() async {
+    if (_isSaving) return;
+    if (!_canExport) {
+      showAppToast(context, 'Generate a valid barcode first',
+          type: ToastType.error);
+      return;
+    }
     setState(() => _isSaving = true);
     try {
       final boundary = _previewKey.currentContext?.findRenderObject()
           as RenderRepaintBoundary?;
       if (boundary == null) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Could not capture barcode')),
-          );
+          showAppToast(context, 'Could not capture barcode',
+              type: ToastType.error);
         }
         return;
       }
@@ -156,28 +188,36 @@ class _BarcodeGeneratorScreenState extends State<BarcodeGeneratorScreen> {
 
       // Gallery permission check
       final hasAccess = await Gal.hasAccess();
-      if (!hasAccess) await Gal.requestAccess();
+      if (!hasAccess && !await Gal.requestAccess()) {
+        if (mounted) {
+          showAppToast(context, 'Gallery permission denied',
+              type: ToastType.error);
+        }
+        return;
+      }
 
       // Gallery তে save করো
       await Gal.putImage(file.path, album: 'QRify');
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Barcode saved to gallery!')),
-        );
+        showAppToast(context, 'Barcode saved to gallery!',
+            type: ToastType.success);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error saving: $e')),
-        );
+        showAppToast(context, 'Could not save barcode', type: ToastType.error);
       }
     } finally {
-      setState(() => _isSaving = false);
+      if (mounted) setState(() => _isSaving = false);
     }
   }
 
   Future<void> _share() async {
+    if (!_canExport) {
+      showAppToast(context, 'Generate a valid barcode first',
+          type: ToastType.error);
+      return;
+    }
     try {
       final boundary = _previewKey.currentContext?.findRenderObject()
           as RenderRepaintBoundary?;
@@ -192,8 +232,7 @@ class _BarcodeGeneratorScreenState extends State<BarcodeGeneratorScreen> {
           text: 'Barcode generated with QRify');
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Error: $e')));
+        showAppToast(context, 'Could not share barcode', type: ToastType.error);
       }
     }
   }
@@ -236,7 +275,7 @@ class _BarcodeGeneratorScreenState extends State<BarcodeGeneratorScreen> {
                   crossAxisCount: 2,
                   crossAxisSpacing: 10,
                   mainAxisSpacing: 10,
-                  childAspectRatio: 2.2,
+                  mainAxisExtent: 70,
                 ),
                 itemCount: _formats.length,
                 itemBuilder: (_, i) {
@@ -277,6 +316,8 @@ class _BarcodeGeneratorScreenState extends State<BarcodeGeneratorScreen> {
                               children: [
                                 Text(
                                   f.label,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.w600,
@@ -286,9 +327,12 @@ class _BarcodeGeneratorScreenState extends State<BarcodeGeneratorScreen> {
                                 ),
                                 Text(
                                   f.description,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
-                                    fontSize: 10,
-                                    color: context.txtMuted,
+                                    fontSize: 10.5,
+                                    height: 1.25,
+                                    color: context.txtSecondary,
                                   ),
                                 ),
                               ],
@@ -345,15 +389,21 @@ class _BarcodeGeneratorScreenState extends State<BarcodeGeneratorScreen> {
                           fontFamily: 'monospace'),
                       decoration: InputDecoration(
                         hintText: _currentFormat.hint,
+                        errorMaxLines: 3,
                         border: InputBorder.none,
                         enabledBorder: InputBorder.none,
                         focusedBorder: InputBorder.none,
                         counterStyle:
                             TextStyle(fontSize: 10, color: context.txtMuted),
                       ),
+                      onChanged: (_) {
+                        // Data বদলালে পুরনো preview লুকিয়ে ফেলো
+                        if (_isGenerated) setState(() => _isGenerated = false);
+                      },
                       validator: (v) {
-                        if (v == null || v.isEmpty) return 'Please enter data';
-                        return null;
+                        final value = v?.trim() ?? '';
+                        if (value.isEmpty) return 'Please enter data';
+                        return _validationError(value);
                       },
                     ),
                   ],

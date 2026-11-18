@@ -142,22 +142,53 @@ class ActionButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final buttonColor = color ?? AppColors.primary;
+    // হালকা রঙের button এ সাদা text পড়া যায় না — তাই dark text
+    final onColor = buttonColor.computeLuminance() > 0.45
+        ? const Color(0xFF14121C)
+        : Colors.white;
+    final fg = outlined ? context.txtPrimary : onColor;
+    final radius = BorderRadius.circular(14);
+
     return SizedBox(
       width: width,
-      height: 48,
-      child: Material(
-        color: outlined ? Colors.transparent : buttonColor,
-        borderRadius: BorderRadius.circular(13),
-        child: InkWell(
-          onTap: isLoading ? null : onTap,
-          borderRadius: BorderRadius.circular(13),
-          child: Container(
-            decoration: outlined
-                ? BoxDecoration(
-                    borderRadius: BorderRadius.circular(13),
-                    border: Border.all(color: context.borderColor, width: 0.5),
-                  )
-                : null,
+      height: 50,
+      child: DecoratedBox(
+        decoration: outlined
+            ? BoxDecoration(
+                borderRadius: radius,
+                color: context.bgElevated.withOpacity(0.5),
+                border: Border.all(
+                    color: context.isDark
+                        ? AppColors.darkBorderLight
+                        : AppColors.lightBorderLight,
+                    width: 1),
+              )
+            : BoxDecoration(
+                borderRadius: radius,
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Color.lerp(buttonColor, Colors.white, 0.12)!,
+                    Color.lerp(buttonColor, Colors.black, 0.18)!,
+                  ],
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: buttonColor.withOpacity(0.32),
+                    blurRadius: 18,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
+              ),
+        child: Material(
+          color: Colors.transparent,
+          borderRadius: radius,
+          child: InkWell(
+            onTap: isLoading ? null : onTap,
+            borderRadius: radius,
+            splashColor: fg.withOpacity(0.12),
+            highlightColor: fg.withOpacity(0.06),
             child: Center(
               child: isLoading
                   ? SizedBox(
@@ -166,25 +197,22 @@ class ActionButton extends StatelessWidget {
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
                         valueColor: AlwaysStoppedAnimation(
-                            outlined ? buttonColor : Colors.white),
+                            outlined ? buttonColor : onColor),
                       ),
                     )
                   : Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         if (icon != null) ...[
-                          Icon(icon,
-                              size: 17,
-                              color:
-                                  outlined ? context.txtPrimary : Colors.white),
-                          const SizedBox(width: 7),
+                          Icon(icon, size: 18, color: fg),
+                          const SizedBox(width: 8),
                         ],
                         Text(label,
                             style: TextStyle(
-                              fontSize: 14,
+                              fontSize: 14.5,
                               fontWeight: FontWeight.w600,
-                              color:
-                                  outlined ? context.txtPrimary : Colors.white,
+                              letterSpacing: 0.2,
+                              color: fg,
                             )),
                       ],
                     ),
@@ -477,14 +505,14 @@ class _Tab extends StatelessWidget {
         duration: 200.ms,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
         decoration: BoxDecoration(
-          color: selected ? AppColors.primary : Colors.transparent,
+          gradient: selected ? AppColors.primaryGradient : null,
           borderRadius: BorderRadius.circular(20),
         ),
         child: Text(label,
             style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w600,
-              color: selected ? Colors.white : context.txtMuted,
+              color: selected ? Colors.white : context.txtSecondary,
             )),
       ),
     );
@@ -572,4 +600,59 @@ class EmptyState extends StatelessWidget {
       ),
     ).animate().fadeIn(duration: 400.ms).scale(begin: const Offset(0.95, 0.95));
   }
+}
+
+// ─── Toast (instant snackbar) ─────────────────────────────────────────────────
+enum ToastType { success, error, warning, info }
+
+/// Shows a toast immediately. Any visible or queued snackbar is cleared first,
+/// so the new message never waits behind an older one.
+void showAppToast(
+  BuildContext context,
+  String message, {
+  ToastType type = ToastType.info,
+  Duration duration = const Duration(milliseconds: 2200),
+}) {
+  final messenger = ScaffoldMessenger.maybeOf(context);
+  if (messenger == null) return;
+
+  final (Color color, IconData icon) = switch (type) {
+    ToastType.success => (AppColors.success, Icons.check_circle_rounded),
+    ToastType.error => (AppColors.error, Icons.error_rounded),
+    ToastType.warning => (AppColors.warning, Icons.warning_amber_rounded),
+    ToastType.info => (AppColors.primaryLight, Icons.info_rounded),
+  };
+
+  messenger
+    ..clearSnackBars()
+    ..showSnackBar(
+      SnackBar(
+        duration: duration,
+        behavior: SnackBarBehavior.floating,
+        elevation: 6,
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        backgroundColor: context.bgElevated,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: BorderSide(color: color.withOpacity(0.45), width: 1),
+        ),
+        content: Row(
+          children: [
+            Icon(icon, color: color, size: 20),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                message,
+                style: TextStyle(
+                  color: context.txtPrimary,
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
 }

@@ -36,6 +36,14 @@ android {
         versionName = flutter.versionName
     }
 
+    // Android 15+ 16 KB page size: native .so files stay uncompressed and
+    // page-aligned inside the APK/AAB.
+    packaging {
+        jniLibs {
+            useLegacyPackaging = false
+        }
+    }
+
     signingConfigs {
         create("release") {
             keyAlias = keystoreProperties["keyAlias"] as String?
@@ -63,4 +71,21 @@ android {
 
 flutter {
     source = "../.."
+}
+
+// ─── 16 KB page size support ─────────────────────────────────────────────────
+// mobile_scanner 5.x pulls ML Kit 17.2.0 and CameraX 1.3.x, whose native
+// libraries (libbarhopper_v3.so, libimage_processing_util_jni.so) are only
+// 4 KB aligned. ML Kit 17.3.0+ and CameraX 1.4.x ship 16 KB aligned builds.
+dependencies {
+    implementation("com.google.mlkit:barcode-scanning:17.3.0")
+}
+
+configurations.all {
+    resolutionStrategy.eachDependency {
+        if (requested.group == "androidx.camera") {
+            useVersion("1.4.2")
+            because("CameraX 1.4+ native libs are 16 KB page aligned")
+        }
+    }
 }

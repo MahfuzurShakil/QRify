@@ -22,9 +22,7 @@ Future<void> _launchUrlExternal(BuildContext context, String url) async {
     await launchUrl(uri, mode: LaunchMode.externalApplication);
   } catch (e) {
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not open: $url')),
-      );
+      showAppToast(context, 'Could not open: $url', type: ToastType.error);
     }
   }
 }
@@ -160,11 +158,10 @@ class _ResultScreenState extends State<ResultScreen> {
     }
 
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-              _isFavorite ? 'Removed from favorites' : 'Saved to favorites!'),
-        ),
+      showAppToast(
+        context,
+        _isFavorite ? 'Removed from favorites' : 'Saved to favorites!',
+        type: ToastType.success,
       );
     }
   }
@@ -312,9 +309,8 @@ class _ResultScreenState extends State<ResultScreen> {
                     onTap: () {
                       Clipboard.setData(
                           ClipboardData(text: widget.item.content));
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Copied to clipboard!')),
-                      );
+                      showAppToast(context, 'Copied to clipboard!',
+                          type: ToastType.success);
                     },
                   ),
                 ),
@@ -678,9 +674,7 @@ class _ContactInfoTile extends StatelessWidget {
           GestureDetector(
             onTap: () {
               Clipboard.setData(ClipboardData(text: value));
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('$label copied!')),
-              );
+              showAppToast(context, '$label copied!', type: ToastType.success);
             },
             child: Icon(Icons.content_copy_rounded,
                 color: context.txtMuted, size: 14),

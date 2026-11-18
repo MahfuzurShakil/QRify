@@ -74,7 +74,7 @@ class _QRGeneratorScreenState extends State<QRGeneratorScreen> {
       'id': 'Phone',
       'label': 'Phone',
       'icon': Icons.phone_rounded,
-      'color': Color(0xFFB388FF)
+      'color': AppColors.lavender
     },
   ];
 
@@ -123,6 +123,26 @@ class _QRGeneratorScreenState extends State<QRGeneratorScreen> {
     if (data.isEmpty) return;
     // Keyboard dismiss
     FocusScope.of(context).unfocus();
+
+    // Data QR তে fit না হলে preview তে error image বানাবো না
+    final validation = QrValidator.validate(
+      data: data,
+      version: QrVersions.auto,
+      errorCorrectionLevel: QrErrorCorrectLevel.H,
+    );
+    if (!validation.isValid || validation.qrCode == null) {
+      setState(() {
+        _isGenerated = false;
+        _qrData = '';
+      });
+      showAppToast(
+        context,
+        'Text is too long for a QR code. Please shorten it.',
+        type: ToastType.error,
+      );
+      return;
+    }
+
     setState(() {
       _qrData = data;
       _isGenerated = true;
@@ -135,11 +155,23 @@ class _QRGeneratorScreenState extends State<QRGeneratorScreen> {
   }
 
   Future<void> _saveToGallery() async {
+    if (_isSaving) return;
+    if (!_isGenerated || _qrData.isEmpty) {
+      showAppToast(context, 'Generate a valid QR code first',
+          type: ToastType.error);
+      return;
+    }
     setState(() => _isSaving = true);
     try {
       final boundary = _previewKey.currentContext?.findRenderObject()
           as RenderRepaintBoundary?;
-      if (boundary == null) return;
+      if (boundary == null) {
+        if (mounted) {
+          showAppToast(context, 'Could not capture QR code',
+              type: ToastType.error);
+        }
+        return;
+      }
       final image = await boundary.toImage(pixelRatio: 4.0);
       final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
       final bytes = byteData!.buffer.asUint8List();
@@ -149,26 +181,30 @@ class _QRGeneratorScreenState extends State<QRGeneratorScreen> {
       await file.writeAsBytes(bytes);
 
       final hasAccess = await Gal.hasAccess();
-      if (!hasAccess) await Gal.requestAccess();
+      if (!hasAccess && !await Gal.requestAccess()) {
+        if (mounted) {
+          showAppToast(context, 'Gallery permission denied',
+              type: ToastType.error);
+        }
+        return;
+      }
       await Gal.putImage(file.path, album: 'QRify');
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('QR code saved to gallery!')),
-        );
+        showAppToast(context, 'QR code saved to gallery!',
+            type: ToastType.success);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error saving: $e')),
-        );
+        showAppToast(context, 'Could not save QR code', type: ToastType.error);
       }
     } finally {
-      setState(() => _isSaving = false);
+      if (mounted) setState(() => _isSaving = false);
     }
   }
 
   Future<void> _share() async {
+    if (!_isGenerated || _qrData.isEmpty) return;
     try {
       final boundary = _previewKey.currentContext?.findRenderObject()
           as RenderRepaintBoundary?;
@@ -183,9 +219,7 @@ class _QRGeneratorScreenState extends State<QRGeneratorScreen> {
           text: 'QR Code generated with QRify');
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error sharing: $e')),
-        );
+        showAppToast(context, 'Could not share QR code', type: ToastType.error);
       }
     }
   }

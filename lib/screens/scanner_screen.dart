@@ -108,12 +108,8 @@ class _ScannerScreenState extends State<ScannerScreen>
     if (image == null) return;
 
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Scanning image...'),
-          duration: Duration(seconds: 3),
-        ),
-      );
+      showAppToast(context, 'Scanning image...',
+          duration: const Duration(seconds: 10));
     }
 
     try {
@@ -122,16 +118,12 @@ class _ScannerScreenState extends State<ScannerScreen>
       final BarcodeCapture? capture =
           await _controller.analyzeImage(image.path);
 
-      if (mounted) ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      if (mounted) ScaffoldMessenger.of(context).removeCurrentSnackBar();
 
       if (capture == null || capture.barcodes.isEmpty) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('No QR code or barcode found in this image'),
-              duration: Duration(seconds: 3),
-            ),
-          );
+          showAppToast(context, 'No QR code or barcode found in this image',
+              type: ToastType.warning);
           await _controller.start();
         }
         return;
@@ -179,10 +171,8 @@ class _ScannerScreenState extends State<ScannerScreen>
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error scanning: $e')),
-        );
+        showAppToast(context, 'Could not scan this image',
+            type: ToastType.error);
         await _controller.start();
       }
     }
@@ -195,19 +185,26 @@ class _ScannerScreenState extends State<ScannerScreen>
       extendBodyBehindAppBar: true,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
-        leading: GestureDetector(
-          onTap: () => Navigator.pop(context),
-          child: Container(
-            margin: const EdgeInsets.only(left: 16),
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              color: Colors.black38,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: Colors.white24, width: 0.5),
+        surfaceTintColor: Colors.transparent,
+        // QR Code / Barcode toggle সবসময় screen এর ঠিক মাঝখানে থাকবে
+        centerTitle: true,
+        leadingWidth: 54,
+        titleSpacing: 0,
+        leading: Center(
+          child: GestureDetector(
+            onTap: () => Navigator.pop(context),
+            child: Container(
+              margin: const EdgeInsets.only(left: 16),
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                color: Colors.black38,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.white24, width: 0.5),
+              ),
+              child: const Icon(Icons.arrow_back_rounded,
+                  color: Colors.white, size: 20),
             ),
-            child: const Icon(Icons.arrow_back_rounded,
-                color: Colors.white, size: 20),
           ),
         ),
         title: ScanModeToggle(
@@ -215,30 +212,36 @@ class _ScannerScreenState extends State<ScannerScreen>
           onChanged: (v) => setState(() => _isQRMode = v),
         ),
         actions: [
-          GestureDetector(
-            onTap: () async {
-              await _controller.toggleTorch();
-              setState(() => _torchOn = !_torchOn);
-            },
-            child: Container(
-              margin: const EdgeInsets.only(right: 16),
-              width: 38,
-              height: 38,
-              decoration: BoxDecoration(
-                color: _torchOn
-                    ? AppColors.warning.withOpacity(0.3)
-                    : Colors.black38,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(
+          // leading এর সমান width (54) — যাতে title ঠিক মাঝে থাকে
+          SizedBox(
+            width: 54,
+            child: Center(
+              child: GestureDetector(
+                onTap: () async {
+                  await _controller.toggleTorch();
+                  setState(() => _torchOn = !_torchOn);
+                },
+                child: Container(
+                  margin: const EdgeInsets.only(right: 16),
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
                     color: _torchOn
-                        ? AppColors.warning.withOpacity(0.5)
-                        : Colors.white24,
-                    width: 0.5),
-              ),
-              child: Icon(
-                _torchOn ? Icons.flash_on_rounded : Icons.flash_off_rounded,
-                color: _torchOn ? AppColors.warning : Colors.white,
-                size: 20,
+                        ? AppColors.warning.withOpacity(0.3)
+                        : Colors.black38,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                        color: _torchOn
+                            ? AppColors.warning.withOpacity(0.5)
+                            : Colors.white24,
+                        width: 0.5),
+                  ),
+                  child: Icon(
+                    _torchOn ? Icons.flash_on_rounded : Icons.flash_off_rounded,
+                    color: _torchOn ? AppColors.warning : Colors.white,
+                    size: 20,
+                  ),
+                ),
               ),
             ),
           ),
