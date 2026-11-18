@@ -206,8 +206,6 @@ class _HomeDashboardState extends State<_HomeDashboard>
   Widget build(BuildContext context) {
     final isDark = context.isDark;
     final bg = context.bgDeep;
-    final cardBg = context.bgCard;
-    final brd = context.borderColor;
 
     return Scaffold(
       backgroundColor: bg,
@@ -286,13 +284,18 @@ class _HomeDashboardState extends State<_HomeDashboard>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const SectionHeader(title: 'FEATURES'),
-                    GridView.count(
-                      crossAxisCount: 2,
+                    // Fixed height — aspect ratio দিলে ছোট phone এ
+                    // card এর লেখা কেটে যেত (overflow)
+                    GridView(
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
-                      crossAxisSpacing: 12,
-                      mainAxisSpacing: 12,
-                      childAspectRatio: 1.05,
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 2,
+                        crossAxisSpacing: 12,
+                        mainAxisSpacing: 12,
+                        mainAxisExtent: 172,
+                      ),
                       children: [
                         FeatureCard(
                           title: 'QR Scanner',
@@ -410,7 +413,11 @@ class _HomeDashboardState extends State<_HomeDashboard>
                               _loadRecent();
                             },
                             onDelete: () async {
-                              await HistoryService.delete(_recentItems[i].id);
+                              // Dismissible এর জন্য সাথে সাথে list থেকে বাদ দাও
+                              final id = _recentItems[i].id;
+                              setState(() =>
+                                  _recentItems.removeWhere((e) => e.id == id));
+                              await HistoryService.delete(id);
                               _loadRecent();
                             },
                           ),
@@ -457,11 +464,13 @@ class _QuickAction extends StatelessWidget {
           ),
           child: Column(
             children: [
-              Icon(icon, color: color, size: 20),
+              Icon(icon, color: context.tone(color), size: 20),
               const SizedBox(height: 6),
               Text(label,
                   style: TextStyle(
-                      fontSize: 11, color: color, fontWeight: FontWeight.w600),
+                      fontSize: 11,
+                      color: context.tone(color),
+                      fontWeight: FontWeight.w600),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis),
             ],

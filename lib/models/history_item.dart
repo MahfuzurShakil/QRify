@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
 enum ScanType { qrCode, barcode }
+
 enum ActionType { scanned, generated }
 
 class HistoryItem {
@@ -70,22 +71,22 @@ class HistoryItem {
   String get displayTitle {
     switch (category) {
       case ContentCategory.url:
-        try {
-          final uri = Uri.parse(content);
-          return uri.host;
-        } catch (_) {
-          return content;
-        }
+        final host = Uri.tryParse(content)?.host ?? '';
+        return host.isNotEmpty ? host : content;
       case ContentCategory.email:
         return content.replaceFirst('mailto:', '');
       case ContentCategory.phone:
         return content.replaceFirst('tel:', '');
       case ContentCategory.wifi:
-        final match = RegExp(r'S:([^;]+)').firstMatch(content);
-        return match?.group(1) ?? content;
+        final ssid = QrPayload.wifiField(content, 'S');
+        return ssid.isNotEmpty ? ssid : content;
       case ContentCategory.contact:
-        final match = RegExp(r'FN:([^\n]+)').firstMatch(content);
-        return match?.group(1) ?? 'Contact';
+        final name = QrPayload.vcardField(content, 'FN');
+        return name.isNotEmpty ? name : 'Contact';
+      case ContentCategory.sms:
+        final rest = content.replaceFirst(
+            RegExp(r'^(smsto|sms):', caseSensitive: false), '');
+        return rest.split(':').first;
       default:
         return content.length > 50 ? '${content.substring(0, 50)}...' : content;
     }
@@ -94,6 +95,30 @@ class HistoryItem {
 
 enum ContentCategory { url, email, phone, wifi, contact, sms, barcode, text }
 
+/// Helpers for parsing structured QR payloads (WiFi / vCard).
+class QrPayload {
+  /// Reads a field like `S:` or `P:` from a `WIFI:` payload, honouring
+  /// backslash escapes (`\;`, `\:`, `\,`, `\\`, `\"`).
+  static String wifiField(String content, String key) {
+    final body = content.startsWith(RegExp('wifi:', caseSensitive: false))
+        ? content.substring(5)
+        : content;
+    final re = RegExp('(?:^|;)$key:((?:\\\\.|[^;\\\\])*)');
+    final raw = re.firstMatch(body)?.group(1) ?? '';
+    return raw.replaceAllMapped(RegExp(r'\\(.)'), (m) => m[1]!);
+  }
+
+  /// Reads a vCard property value (e.g. `FN`, `TEL`, `EMAIL`) and unescapes it.
+  static String vcardField(String content, String key) {
+    final re = RegExp('^$key(?:;[^:\n\r]*)?:([^\n\r]*)',
+        multiLine: true, caseSensitive: false);
+    final raw = re.firstMatch(content)?.group(1)?.trim() ?? '';
+    return raw
+        .replaceAll(r'\n', ' ')
+        .replaceAllMapped(RegExp(r'\\([\\;,])'), (m) => m[1]!);
+  }
+}
+
 class HistoryService {
   static const _key = 'history_items';
   static final _uuid = Uuid();
@@ -101,10 +126,14 @@ class HistoryService {
   static Future<List<HistoryItem>> getAll() async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getStringList(_key) ?? [];
-    return raw
-        .map((e) => HistoryItem.fromJson(jsonDecode(e)))
-        .toList()
-      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    final items = <HistoryItem>[];
+    for (final e in raw) {
+      // একটা নষ্ট entry এর জন্য পুরো history যেন crash না করে
+      try {
+        items.add(HistoryItem.fromJson(jsonDecode(e)));
+      } catch (_) {}
+    }
+    return items..sort((a, b) => b.createdAt.compareTo(a.createdAt));
   }
 
   static Future<void> add({
@@ -158,9 +187,8 @@ class HistoryService {
   static Future<void> delete(String id) async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getStringList(_key) ?? [];
-    final updated = raw
-        .where((e) => HistoryItem.fromJson(jsonDecode(e)).id != id)
-        .toList();
+    final updated =
+        raw.where((e) => HistoryItem.fromJson(jsonDecode(e)).id != id).toList();
     await prefs.setStringList(_key, updated);
   }
 

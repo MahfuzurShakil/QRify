@@ -15,12 +15,7 @@ void main() async {
     DeviceOrientation.portraitDown,
   ]);
 
-  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-    statusBarColor: Colors.transparent,
-    statusBarIconBrightness: Brightness.light,
-    systemNavigationBarColor: AppColors.darkBgCard,
-    systemNavigationBarIconBrightness: Brightness.light,
-  ));
+  await themeProvider.load();
 
   runApp(const QRifyApp());
 }
@@ -240,7 +235,6 @@ class _QRLogoPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final white = Paint()..color = Colors.white;
     final purple = Paint()..color = AppColors.primary;
-    final whiteO = Paint()..color = Colors.white.withOpacity(0.85);
 
     final s = size.width;
     final pad = s * 0.12;

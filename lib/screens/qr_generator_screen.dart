@@ -96,24 +96,65 @@ class _QRGeneratorScreenState extends State<QRGeneratorScreen> {
     super.dispose();
   }
 
+  static final _schemeRe = RegExp(r'^[a-zA-Z][a-zA-Z0-9+.\-]*://');
+
+  static String _withScheme(String url) =>
+      _schemeRe.hasMatch(url) ? url : 'https://$url';
+
+  // WiFi / vCard এ special character escape করতে হয়, না হলে scan ভুল আসে
+  static String _escapeWifi(String v) =>
+      v.replaceAllMapped(RegExp(r'([\\;,:"])'), (m) => '\\${m[1]}');
+
+  static String _escapeVCard(String v) => v
+      .replaceAll('\\', '\\\\')
+      .replaceAll(';', '\\;')
+      .replaceAll(',', '\\,')
+      .replaceAll('\n', '\\n');
+
   String _buildQRData() {
     switch (_selectedType) {
       case 'URL':
-        var url = _urlCtrl.text.trim();
-        if (!url.startsWith('http')) url = 'https://$url';
-        return url;
+        return _withScheme(_urlCtrl.text.trim());
       case 'Text':
         return _textCtrl.text.trim();
       case 'Contact':
-        return 'BEGIN:VCARD\nVERSION:3.0\nFN:${_nameCtrl.text.trim()}\nTEL:${_phoneCtrl.text.trim()}\nEMAIL:${_emailCtrl.text.trim()}\nEND:VCARD';
+        final name = _escapeVCard(_nameCtrl.text.trim());
+        final phone = _phoneCtrl.text.trim();
+        final email = _emailCtrl.text.trim();
+        return [
+          'BEGIN:VCARD',
+          'VERSION:3.0',
+          'N:;$name;;;',
+          'FN:$name',
+          if (phone.isNotEmpty) 'TEL:$phone',
+          if (email.isNotEmpty) 'EMAIL:$email',
+          'END:VCARD',
+        ].join('\n');
       case 'WiFi':
-        return 'WIFI:T:$_wifiType;S:${_ssidCtrl.text.trim()};P:${_passCtrl.text.trim()};H:$_wifiHidden;;';
+        final ssid = _escapeWifi(_ssidCtrl.text.trim());
+        if (_wifiType == 'None') {
+          return 'WIFI:T:nopass;S:$ssid;${_wifiHidden ? 'H:true;' : ''};';
+        }
+        final pass = _escapeWifi(_passCtrl.text);
+        return 'WIFI:T:$_wifiType;S:$ssid;P:$pass;${_wifiHidden ? 'H:true;' : ''};';
       case 'Email':
         return 'mailto:${_emailCtrl.text.trim()}';
       case 'Phone':
         return 'tel:${_phoneCtrl.text.trim()}';
       default:
         return '';
+    }
+  }
+
+  static bool _fitsInQr(String data) {
+    try {
+      QrImage(QrCode.fromData(
+        data: data,
+        errorCorrectLevel: QrErrorCorrectLevel.H,
+      ));
+      return true;
+    } catch (_) {
+      return false;
     }
   }
 
@@ -124,13 +165,9 @@ class _QRGeneratorScreenState extends State<QRGeneratorScreen> {
     // Keyboard dismiss
     FocusScope.of(context).unfocus();
 
-    // Data QR তে fit না হলে preview তে error image বানাবো না
-    final validation = QrValidator.validate(
-      data: data,
-      version: QrVersions.auto,
-      errorCorrectionLevel: QrErrorCorrectLevel.H,
-    );
-    if (!validation.isValid || validation.qrCode == null) {
+    // Data QR তে fit না হলে preview তে error image বানাবো না।
+    // QrValidator একা যথেষ্ট না — আসল QrImage বানিয়ে দেখতে হয়।
+    if (!_fitsInQr(data)) {
       setState(() {
         _isGenerated = false;
         _qrData = '';
@@ -230,21 +267,8 @@ class _QRGeneratorScreenState extends State<QRGeneratorScreen> {
       backgroundColor: context.bgDeep,
       appBar: AppBar(
         title: const Text('QR Generator'),
-        leading: GestureDetector(
-          onTap: () => Navigator.pop(context),
-          child: Container(
-            margin: const EdgeInsets.only(left: 16),
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              color: context.bgCard,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: context.borderColor, width: 0.5),
-            ),
-            child: Icon(Icons.arrow_back_rounded,
-                color: context.txtPrimary, size: 20),
-          ),
-        ),
+        leadingWidth: 54,
+        leading: const AppBackButton(),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
@@ -351,7 +375,7 @@ class _QRGeneratorScreenState extends State<QRGeneratorScreen> {
           validator: (v) {
             final val = v?.trim() ?? '';
             if (val.isEmpty) return 'Please enter a URL';
-            final full = val.startsWith('http') ? val : 'https://$val';
+            final full = _withScheme(val);
             final uri = Uri.tryParse(full);
             if (uri == null || !uri.hasAuthority || !uri.host.contains('.')) {
               return 'Please enter a valid URL (e.g. google.com)';
@@ -433,6 +457,15 @@ class _QRGeneratorScreenState extends State<QRGeneratorScreen> {
             controller: _passCtrl,
             icon: Icons.lock_rounded,
             obscureText: true,
+            validator: (v) {
+              if (_wifiType == 'None') return null;
+              final val = v ?? '';
+              if (val.isEmpty) return 'Password is required for $_wifiType';
+              if (_wifiType == 'WPA' && val.length < 8) {
+                return 'WPA password must be at least 8 characters';
+              }
+              return null;
+            },
           ),
           const SizedBox(height: 12),
           GlassContainer(
@@ -643,11 +676,13 @@ class _QRPreview extends StatelessWidget {
           Text('Style:',
               style: TextStyle(fontSize: 12, color: context.txtSecondary)),
           const SizedBox(width: 10),
+          // সব style এ dark code + light background — উল্টো (light-on-dark)
+          // QR অনেক scanner পড়তে পারে না
           ...[
             [AppColors.darkBgDeep, AppColors.surfaceWhite],
-            [AppColors.primary, AppColors.darkBgDeep],
-            [AppColors.accent, AppColors.darkBgDeep],
-            [AppColors.success, AppColors.darkBgDeep],
+            [const Color(0xFF4527C9), Colors.white],
+            [const Color(0xFFA3123F), Colors.white],
+            [const Color(0xFF07694A), Colors.white],
           ].map((pair) {
             final fg = pair[0];
             final bg = pair[1];

@@ -143,13 +143,20 @@ class _BarcodeGeneratorScreenState extends State<BarcodeGeneratorScreen> {
   /// Returns a user-friendly message if [data] is not valid for the selected
   /// format, otherwise null.
   String? _validationError(String data) {
-    try {
-      _currentFormat.barcode.verify(data);
-      return null;
-    } on BarcodeException catch (e) {
-      return 'Invalid data for ${_currentFormat.label}: ${e.message}';
-    } catch (_) {
-      return 'Invalid data for ${_currentFormat.label}';
+    if (_currentFormat.barcode.isValid(data)) return null;
+    switch (_selectedFormat) {
+      case 'EAN-13':
+        return 'EAN-13 needs 12 digits (or 13 with a correct check digit).';
+      case 'EAN-8':
+        return 'EAN-8 needs 7 digits (or 8 with a correct check digit).';
+      case 'UPC-A':
+        return 'UPC-A needs 11 digits (or 12 with a correct check digit).';
+      case 'Code39':
+        return 'Code 39 allows only A-Z, 0-9, space and - . \$ / + %';
+      case 'Code128':
+        return 'Code 128 allows only standard keyboard characters.';
+      default:
+        return 'This text cannot be encoded as ${_currentFormat.label}.';
     }
   }
 
@@ -243,21 +250,8 @@ class _BarcodeGeneratorScreenState extends State<BarcodeGeneratorScreen> {
       backgroundColor: context.bgDeep,
       appBar: AppBar(
         title: const Text('Barcode Generator'),
-        leading: GestureDetector(
-          onTap: () => Navigator.pop(context),
-          child: Container(
-            margin: const EdgeInsets.only(left: 16),
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              color: context.bgCard,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: context.borderColor, width: 0.5),
-            ),
-            child: Icon(Icons.arrow_back_rounded,
-                color: context.txtPrimary, size: 20),
-          ),
-        ),
+        leadingWidth: 54,
+        leading: const AppBackButton(),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
@@ -382,6 +376,13 @@ class _BarcodeGeneratorScreenState extends State<BarcodeGeneratorScreen> {
                     ),
                     TextFormField(
                       controller: _inputCtrl,
+                      keyboardType: const {'EAN-13', 'EAN-8', 'UPC-A'}
+                              .contains(_selectedFormat)
+                          ? TextInputType.number
+                          : TextInputType.text,
+                      textCapitalization: _selectedFormat == 'Code39'
+                          ? TextCapitalization.characters
+                          : TextCapitalization.none,
                       maxLength: _currentFormat.maxLength,
                       style: TextStyle(
                           color: context.txtPrimary,

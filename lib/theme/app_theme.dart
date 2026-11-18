@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 // ─── Brand Colors (theme independent) ────────────────────────────────────────
 class AppColors {
@@ -74,16 +75,26 @@ class ThemeProvider extends ChangeNotifier {
   bool get isDark => _isDark;
   ThemeMode get themeMode => _isDark ? ThemeMode.dark : ThemeMode.light;
 
-  void toggle() {
-    _isDark = !_isDark;
+  static const _prefKey = 'is_dark_theme';
+
+  /// App চালু হওয়ার সময় আগের theme ফিরিয়ে আনো
+  Future<void> load() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _isDark = prefs.getBool(_prefKey) ?? true;
+    } catch (_) {}
     _updateSystemUI();
-    notifyListeners();
   }
+
+  void toggle() => setDark(!_isDark);
 
   void setDark(bool value) {
     _isDark = value;
     _updateSystemUI();
     notifyListeners();
+    SharedPreferences.getInstance()
+        .then((p) => p.setBool(_prefKey, value))
+        .catchError((_) => false);
   }
 
   void _updateSystemUI() {
@@ -234,4 +245,8 @@ extension ThemeColors on BuildContext {
       isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted;
   Color get borderColor =>
       isDark ? AppColors.darkBorder : AppColors.lightBorder;
+
+  /// Accent color made readable on the current background: unchanged on dark,
+  /// deepened on light (bright mint/amber text is hard to read on white).
+  Color tone(Color c) => isDark ? c : Color.lerp(c, Colors.black, 0.32)!;
 }

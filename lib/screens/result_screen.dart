@@ -19,7 +19,10 @@ Future<void> _launchUrlExternal(BuildContext context, String url) async {
       finalUrl = 'https://$url';
     }
     final uri = Uri.parse(finalUrl);
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!ok && context.mounted) {
+      showAppToast(context, 'No app found to open this', type: ToastType.error);
+    }
   } catch (e) {
     if (context.mounted) {
       showAppToast(context, 'Could not open: $url', type: ToastType.error);
@@ -29,13 +32,9 @@ Future<void> _launchUrlExternal(BuildContext context, String url) async {
 
 // ─── vCard → Android Contacts app ────────────────────────────────────────────
 Future<void> _addContact(BuildContext context, String vcard) async {
-  final name =
-      RegExp(r'FN:([^\n\r]+)').firstMatch(vcard)?.group(1)?.trim() ?? '';
-  final phone =
-      RegExp(r'TEL[^:]*:([^\n\r]+)').firstMatch(vcard)?.group(1)?.trim() ?? '';
-  final email =
-      RegExp(r'EMAIL[^:]*:([^\n\r]+)').firstMatch(vcard)?.group(1)?.trim() ??
-          '';
+  final name = QrPayload.vcardField(vcard, 'FN');
+  final phone = QrPayload.vcardField(vcard, 'TEL');
+  final email = QrPayload.vcardField(vcard, 'EMAIL');
 
   bool launched = false;
 
@@ -117,14 +116,6 @@ class ResultScreen extends StatefulWidget {
 }
 
 class _ResultScreenState extends State<ResultScreen> {
-  bool _isFavorite = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _isFavorite = widget.item.isFavorite;
-  }
-
   Color get _primaryColor {
     switch (widget.item.scanType) {
       case ScanType.qrCode:
@@ -138,34 +129,6 @@ class _ResultScreenState extends State<ResultScreen> {
     }
   }
 
-  Future<void> _handleSave() async {
-    // History তে add করো (না থাকলে)
-    await HistoryService.add(
-      content: widget.item.content,
-      scanType: widget.item.scanType,
-      actionType: widget.item.actionType,
-      barcodeFormat: widget.item.barcodeFormat,
-    );
-
-    // Favorites এ toggle করো
-    final allItems = await HistoryService.getAll();
-    final existing =
-        allItems.where((i) => i.content == widget.item.content).toList();
-
-    if (existing.isNotEmpty) {
-      await HistoryService.toggleFavorite(existing.first.id);
-      setState(() => _isFavorite = !_isFavorite);
-    }
-
-    if (mounted) {
-      showAppToast(
-        context,
-        _isFavorite ? 'Removed from favorites' : 'Saved to favorites!',
-        type: ToastType.success,
-      );
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -176,21 +139,8 @@ class _ResultScreenState extends State<ResultScreen> {
               ? 'Scan Result'
               : 'Generated',
         ),
-        leading: GestureDetector(
-          onTap: () => Navigator.pop(context),
-          child: Container(
-            margin: const EdgeInsets.only(left: 16),
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              color: context.bgCard,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: context.borderColor, width: 0.5),
-            ),
-            child: Icon(Icons.arrow_back_rounded,
-                color: context.txtPrimary, size: 20),
-          ),
-        ),
+        leadingWidth: 54,
+        leading: const AppBackButton(),
         actions: const [],
       ),
       body: SingleChildScrollView(
@@ -391,12 +341,8 @@ class _ResultScreenState extends State<ResultScreen> {
         break;
 
       case ContentCategory.wifi:
-        final ssid =
-            RegExp(r'S:([^;]+)').firstMatch(widget.item.content)?.group(1) ??
-                '';
-        final pass =
-            RegExp(r'P:([^;]+)').firstMatch(widget.item.content)?.group(1) ??
-                '';
+        final ssid = QrPayload.wifiField(widget.item.content, 'S');
+        final pass = QrPayload.wifiField(widget.item.content, 'P');
         actions.add(
           GlassContainer(
             borderColor: AppColors.success.withOpacity(0.2),
@@ -415,7 +361,10 @@ class _ResultScreenState extends State<ResultScreen> {
                 const SizedBox(height: 12),
                 _InfoRow(label: 'Network', value: ssid),
                 const SizedBox(height: 8),
-                _InfoRow(label: 'Password', value: pass, isPassword: true),
+                if (pass.isNotEmpty)
+                  _InfoRow(label: 'Password', value: pass, isPassword: true)
+                else
+                  const _InfoRow(label: 'Password', value: 'Open network'),
               ],
             ),
           ).animate(delay: 400.ms).fadeIn().slideY(begin: 0.1),
@@ -423,21 +372,9 @@ class _ResultScreenState extends State<ResultScreen> {
         break;
 
       case ContentCategory.contact:
-        final name = RegExp(r'FN:([^\n\r]+)')
-                .firstMatch(widget.item.content)
-                ?.group(1)
-                ?.trim() ??
-            '';
-        final phone = RegExp(r'TEL[^:]*:([^\n\r]+)')
-                .firstMatch(widget.item.content)
-                ?.group(1)
-                ?.trim() ??
-            '';
-        final email = RegExp(r'EMAIL[^:]*:([^\n\r]+)')
-                .firstMatch(widget.item.content)
-                ?.group(1)
-                ?.trim() ??
-            '';
+        final name = QrPayload.vcardField(widget.item.content, 'FN');
+        final phone = QrPayload.vcardField(widget.item.content, 'TEL');
+        final email = QrPayload.vcardField(widget.item.content, 'EMAIL');
         actions.addAll([
           GlassContainer(
             borderColor: AppColors.accent.withOpacity(0.2),
@@ -477,6 +414,31 @@ class _ResultScreenState extends State<ResultScreen> {
             ),
           ).animate(delay: 450.ms).fadeIn(),
         ]);
+        break;
+
+      case ContentCategory.sms:
+        // SMSTO:number:message → sms:number?body=message
+        final rest = widget.item.content
+            .replaceFirst(RegExp(r'^(smsto|sms):', caseSensitive: false), '');
+        final idx = rest.indexOf(':');
+        final number = idx == -1 ? rest : rest.substring(0, idx);
+        final body = idx == -1 ? '' : rest.substring(idx + 1);
+        actions.add(
+          SizedBox(
+            width: double.infinity,
+            child: ActionButton(
+              label: 'Send SMS',
+              icon: Icons.sms_rounded,
+              onTap: () => _launchUrlExternal(
+                context,
+                body.isEmpty
+                    ? 'sms:$number'
+                    : 'sms:$number?body=${Uri.encodeComponent(body)}',
+              ),
+              color: AppColors.success,
+            ),
+          ).animate(delay: 400.ms).fadeIn().slideY(begin: 0.1),
+        );
         break;
 
       default:
@@ -555,13 +517,11 @@ class _QuickAction extends StatelessWidget {
   final IconData icon;
   final String label;
   final VoidCallback onTap;
-  final Color? iconColor;
 
   const _QuickAction({
     required this.icon,
     required this.label,
     required this.onTap,
-    this.iconColor,
   });
 
   @override
@@ -577,7 +537,7 @@ class _QuickAction extends StatelessWidget {
         ),
         child: Column(
           children: [
-            Icon(icon, color: iconColor ?? context.txtSecondary, size: 20),
+            Icon(icon, color: context.txtSecondary, size: 20),
             const SizedBox(height: 5),
             Text(label,
                 style: TextStyle(fontSize: 11, color: context.txtSecondary),
@@ -638,7 +598,11 @@ class _InfoRowState extends State<_InfoRow> {
           ),
         const SizedBox(width: 6),
         GestureDetector(
-          onTap: () => Clipboard.setData(ClipboardData(text: widget.value)),
+          onTap: () {
+            Clipboard.setData(ClipboardData(text: widget.value));
+            showAppToast(context, '${widget.label} copied!',
+                type: ToastType.success);
+          },
           child: Icon(Icons.content_copy_rounded,
               color: context.txtMuted, size: 15),
         ),

@@ -53,7 +53,7 @@ class FeatureCard extends StatelessWidget {
                       border:
                           Border.all(color: color.withOpacity(0.2), width: 0.5),
                     ),
-                    child: Icon(icon, color: color, size: 22),
+                    child: Icon(icon, color: context.tone(color), size: 22),
                   ),
                   const SizedBox(height: 14),
                   Text(title,
@@ -65,11 +65,15 @@ class FeatureCard extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis),
                   const SizedBox(height: 4),
-                  Text(subtitle,
-                      style: TextStyle(
-                          fontSize: 12, color: context.txtMuted, height: 1.4),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis),
+                  Flexible(
+                    child: Text(subtitle,
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: context.txtSecondary,
+                            height: 1.4),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis),
+                  ),
                 ],
               ),
             ),
@@ -243,7 +247,7 @@ class TypeBadge extends StatelessWidget {
           style: TextStyle(
             fontSize: 11,
             fontWeight: FontWeight.w600,
-            color: color,
+            color: context.tone(color),
             letterSpacing: 0.3,
           )),
     );
@@ -655,4 +659,36 @@ void showAppToast(
         ),
       ),
     );
+}
+
+// ─── App bar back button (square, vertically centered) ───────────────────────
+class AppBackButton extends StatelessWidget {
+  const AppBackButton({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.only(left: 16),
+        child: Material(
+          color: context.bgCard,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(11),
+            side: BorderSide(color: context.borderColor, width: 1),
+          ),
+          child: InkWell(
+            customBorder:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(11)),
+            onTap: () => Navigator.maybePop(context),
+            child: SizedBox(
+              width: 38,
+              height: 38,
+              child: Icon(Icons.arrow_back_rounded,
+                  color: context.txtPrimary, size: 20),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }

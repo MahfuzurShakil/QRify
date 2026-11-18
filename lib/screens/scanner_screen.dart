@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../theme/app_theme.dart';
 import '../models/history_item.dart';
 import '../widgets/common_widgets.dart';
@@ -51,6 +52,11 @@ class _ScannerScreenState extends State<ScannerScreen>
     super.dispose();
   }
 
+  static bool _is2D(BarcodeFormat f) =>
+      f == BarcodeFormat.qrCode ||
+      f == BarcodeFormat.aztec ||
+      f == BarcodeFormat.dataMatrix;
+
   void _onDetect(BarcodeCapture capture) async {
     if (_isProcessing || _hasScanned) return;
     final barcodes = capture.barcodes;
@@ -68,10 +74,13 @@ class _ScannerScreenState extends State<ScannerScreen>
     HapticFeedback.mediumImpact();
     await _controller.stop();
 
+    // Mode না, আসল format দেখে QR নাকি Barcode ঠিক করো
+    final scanType = _is2D(barcode.format) ? ScanType.qrCode : ScanType.barcode;
+
     final item = HistoryItem(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
       content: value,
-      scanType: _isQRMode ? ScanType.qrCode : ScanType.barcode,
+      scanType: scanType,
       actionType: ActionType.scanned,
       barcodeFormat: barcode.format.name,
       createdAt: DateTime.now(),
@@ -79,7 +88,7 @@ class _ScannerScreenState extends State<ScannerScreen>
 
     await HistoryService.add(
       content: value,
-      scanType: _isQRMode ? ScanType.qrCode : ScanType.barcode,
+      scanType: scanType,
       actionType: ActionType.scanned,
       barcodeFormat: barcode.format.name,
     );
@@ -103,8 +112,26 @@ class _ScannerScreenState extends State<ScannerScreen>
   }
 
   Future<void> _pickFromGallery() async {
-    final picker = ImagePicker();
-    final image = await picker.pickImage(source: ImageSource.gallery);
+    if (_isProcessing) return;
+    // Gallery খোলা থাকা অবস্থায় camera যেন আরেকটা scan না ধরে
+    _isProcessing = true;
+    try {
+      await _scanFromGallery();
+    } finally {
+      _isProcessing = false;
+    }
+  }
+
+  Future<void> _scanFromGallery() async {
+    XFile? image;
+    try {
+      image = await ImagePicker().pickImage(source: ImageSource.gallery);
+    } catch (_) {
+      if (mounted) {
+        showAppToast(context, 'Could not open gallery', type: ToastType.error);
+      }
+      return;
+    }
     if (image == null) return;
 
     if (mounted) {
@@ -137,9 +164,7 @@ class _ScannerScreenState extends State<ScannerScreen>
       }
 
       // Format দেখে automatically QR নাকি Barcode ঠিক করো
-      final isQR = barcode.format == BarcodeFormat.qrCode ||
-          barcode.format == BarcodeFormat.aztec ||
-          barcode.format == BarcodeFormat.dataMatrix;
+      final isQR = _is2D(barcode.format);
 
       HapticFeedback.mediumImpact();
 
@@ -253,15 +278,27 @@ class _ScannerScreenState extends State<ScannerScreen>
           MobileScanner(
             controller: _controller,
             onDetect: _onDetect,
+            errorBuilder: (context, error, _) => _CameraError(
+              permissionDenied:
+                  error.errorCode == MobileScannerErrorCode.permissionDenied,
+            ),
           ),
 
-          // ─── Dark overlay with cutout ─────────────────────────────────
-          _ScannerOverlay(isQRMode: _isQRMode),
-
-          // ─── Animated scan line ────────────────────────────────────────
-          Positioned.fill(
-            child:
-                _ScanLine(animation: _scanLineController, isQRMode: _isQRMode),
+          // ─── Dark overlay + scan line (camera error হলে লুকাও) ─────────
+          ValueListenableBuilder<MobileScannerState>(
+            valueListenable: _controller,
+            builder: (_, state, __) {
+              if (state.error != null) return const SizedBox.shrink();
+              return Stack(
+                children: [
+                  Positioned.fill(child: _ScannerOverlay(isQRMode: _isQRMode)),
+                  Positioned.fill(
+                    child: _ScanLine(
+                        animation: _scanLineController, isQRMode: _isQRMode),
+                  ),
+                ],
+              );
+            },
           ),
 
           // ─── Bottom controls ───────────────────────────────────────────
@@ -374,7 +411,7 @@ class _OverlayPainter extends CustomPainter {
           ..moveTo(r.left, r.bottom - cornerLength)
           ..lineTo(r.left, r.bottom - 12)
           ..arcToPoint(Offset(r.left + 12, r.bottom),
-              radius: const Radius.circular(12))
+              radius: const Radius.circular(12), clockwise: false)
           ..lineTo(r.left + cornerLength, r.bottom),
         cornerPaint);
     // Bottom-right
@@ -383,13 +420,14 @@ class _OverlayPainter extends CustomPainter {
           ..moveTo(r.right - cornerLength, r.bottom)
           ..lineTo(r.right - 12, r.bottom)
           ..arcToPoint(Offset(r.right, r.bottom - 12),
-              radius: const Radius.circular(12))
+              radius: const Radius.circular(12), clockwise: false)
           ..lineTo(r.right, r.bottom - cornerLength),
         cornerPaint);
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant _OverlayPainter old) =>
+      old.cutoutRect != cutoutRect || old.isQR != isQR;
 }
 
 class _ScanLine extends StatelessWidget {
@@ -531,6 +569,73 @@ class _ControlButton extends StatelessWidget {
           Text(label,
               style: const TextStyle(color: Colors.white70, fontSize: 11)),
         ],
+      ),
+    );
+  }
+}
+
+// ─── Camera error / permission denied ────────────────────────────────────────
+class _CameraError extends StatelessWidget {
+  final bool permissionDenied;
+  const _CameraError({required this.permissionDenied});
+
+  @override
+  Widget build(BuildContext context) {
+    return ColoredBox(
+      color: Colors.black,
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 64,
+                height: 64,
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withOpacity(0.15),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                      color: AppColors.primary.withOpacity(0.4), width: 1),
+                ),
+                child: const Icon(Icons.no_photography_rounded,
+                    color: AppColors.primaryLight, size: 28),
+              ),
+              const SizedBox(height: 18),
+              Text(
+                permissionDenied
+                    ? 'Camera permission needed'
+                    : 'Camera is not available',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                permissionDenied
+                    ? 'Allow camera access in Settings to scan codes, or pick an image from your gallery.'
+                    : 'Close other apps using the camera and try again, or pick an image from your gallery.',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                    color: Color(0xFFC4C0D6), fontSize: 13, height: 1.5),
+              ),
+              const SizedBox(height: 22),
+              if (permissionDenied) ...[
+                SizedBox(
+                  width: double.infinity,
+                  child: ActionButton(
+                    label: 'Open Settings',
+                    icon: Icons.settings_rounded,
+                    onTap: () => openAppSettings(),
+                  ),
+                ),
+                const SizedBox(height: 10),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }
