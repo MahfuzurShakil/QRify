@@ -29,6 +29,8 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          # Pin to the version the project is tested with; newer Flutter needs a newer Gradle
+          flutter-version: 3.47.5
           cache: true
 
       - name: Restore upload keystore
