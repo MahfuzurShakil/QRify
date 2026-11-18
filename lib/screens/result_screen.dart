@@ -116,6 +116,30 @@ class ResultScreen extends StatefulWidget {
 }
 
 class _ResultScreenState extends State<ResultScreen> {
+  // Scanner এর raw format নাম (ean13, qrCode) কে পড়ার মতো label বানাও
+  static const _formatLabels = {
+    'ean13': 'EAN-13',
+    'ean8': 'EAN-8',
+    'upcA': 'UPC-A',
+    'upcE': 'UPC-E',
+    'code128': 'Code 128',
+    'code39': 'Code 39',
+    'code93': 'Code 93',
+    'codabar': 'Codabar',
+    'itf': 'ITF',
+    'itf14': 'ITF-14',
+    'pdf417': 'PDF417',
+    'dataMatrix': 'Data Matrix',
+    'aztec': 'Aztec',
+  };
+
+  String? get _formatLabel {
+    final raw = widget.item.barcodeFormat;
+    // QR হলে আগের badge এ "QR Code" লেখা আছে, আবার দেখানোর দরকার নেই
+    if (raw == null || raw == 'qrCode' || raw == 'unknown') return null;
+    return _formatLabels[raw] ?? raw;
+  }
+
   Color get _primaryColor {
     switch (widget.item.scanType) {
       case ScanType.qrCode:
@@ -196,10 +220,10 @@ class _ResultScreenState extends State<ResultScreen> {
                             : 'Barcode',
                         color: _primaryColor,
                       ),
-                      if (widget.item.barcodeFormat != null) ...[
+                      if (_formatLabel != null) ...[
                         const SizedBox(width: 6),
                         TypeBadge(
-                            label: widget.item.barcodeFormat!,
+                            label: _formatLabel!,
                             color: context.txtMuted),
                       ],
                     ],

@@ -1,6 +1,8 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:in_app_update/in_app_update.dart';
 import 'theme/app_theme.dart';
 import 'screens/home_screen.dart';
 
@@ -34,6 +36,21 @@ class _QRifyAppState extends State<QRifyApp> {
     themeProvider.addListener(() {
       if (mounted) setState(() {});
     });
+    _checkForUpdate();
+  }
+
+  // Play Store এ নতুন version থাকলে full-screen update চালাও (force update)
+  Future<void> _checkForUpdate() async {
+    if (!Platform.isAndroid) return;
+    try {
+      final info = await InAppUpdate.checkForUpdate();
+      if (info.updateAvailability == UpdateAvailability.updateAvailable &&
+          info.immediateUpdateAllowed) {
+        await InAppUpdate.performImmediateUpdate();
+      }
+    } catch (_) {
+      // Play Store থেকে install না হলে (debug/test) update check কাজ করে না
+    }
   }
 
   @override

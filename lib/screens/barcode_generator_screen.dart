@@ -132,8 +132,10 @@ class _BarcodeGeneratorScreenState extends State<BarcodeGeneratorScreen> {
       _barcodeData = data;
       _isGenerated = true;
     });
+    // EAN/UPC তে check digit সহ পুরো নম্বরটা history তে রাখো
+    final barcode = _currentFormat.barcode;
     HistoryService.add(
-      content: data,
+      content: barcode is BarcodeEan ? barcode.normalize(data) : data,
       scanType: ScanType.barcode,
       actionType: ActionType.generated,
       barcodeFormat: _selectedFormat,
